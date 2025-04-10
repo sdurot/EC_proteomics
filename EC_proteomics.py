@@ -78,7 +78,7 @@ plt.title('Spearman correlation of proteomics samples')
 plt.show()
 
 
-#%% Creat datasets with average protein expression
+#%% Create datasets with average protein expression
 # Function to compute average protein expression
 def average_protein_expression(data):
     """
