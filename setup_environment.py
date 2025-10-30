@@ -19,7 +19,7 @@ from pathlib import Path
 
 def run_command(cmd, description, check=True):
     """Run a command with error handling."""
-    print(f"📋 {description}")
+    print(f" {description}")
     print(f"   Running: {cmd}")
     
     try:
@@ -42,7 +42,7 @@ def run_command(cmd, description, check=True):
 
 def setup_venv():
     """Set up standard Python virtual environment."""
-    print("\n🐍 Setting up Python Virtual Environment")
+    print("\n Setting up Python Virtual Environment")
     print("=" * 50)
     
     # Create virtual environment
@@ -60,7 +60,7 @@ def setup_venv():
         pip_path = ".venv/bin/pip"
         python_path = ".venv/bin/python"
     
-    print(f"\n📦 Installing packages with {pip_path}")
+    print(f"\n Installing packages with {pip_path}")
     
     # Upgrade pip first
     if not run_command([python_path, "-m", "pip", "install", "--upgrade", "pip"], 
@@ -71,8 +71,8 @@ def setup_venv():
     if os.path.exists("requirements.txt"):
         if run_command([pip_path, "install", "-r", "requirements.txt"], 
                       "Installing requirements"):
-            print("\n✅ Virtual environment setup complete!")
-            print(f"\n🚀 To activate the environment:")
+            print("\n Virtual environment setup complete!")
+            print(f"\n To activate the environment:")
             if os.name == 'nt':
                 print(f"   .venv\\Scripts\\activate")
             else:
@@ -84,7 +84,7 @@ def setup_venv():
 
 def setup_uv():
     """Set up UV-based environment."""
-    print("\n⚡ Setting up UV Environment")
+    print("\n Setting up UV Environment")
     print("=" * 50)
     
     # Check if UV is available
@@ -104,13 +104,13 @@ def setup_uv():
         if run_command(["uv", "pip", "install", "-r", "requirements.txt"], 
                       "Installing packages with UV"):
             print("\n✅ UV environment setup complete!")
-            print(f"\n🚀 To use UV environment:")
+            print(f"\n To use UV environment:")
             print(f"   uv run python your_script.py")
             print(f"   uv run jupyter notebook")
             return True
         else:
             print("❌ UV package installation failed")
-            print("💡 This might be due to network drive issues")
+            print(" This might be due to network drive issues")
             print("   Trying fallback to standard virtual environment...")
             return setup_venv()
     else:
@@ -119,7 +119,7 @@ def setup_uv():
 
 def setup_conda():
     """Set up Conda environment."""
-    print("\n🐍 Setting up Conda Environment")
+    print("\n Setting up Conda Environment")
     print("=" * 50)
     
     env_name = "ec-proteomics"
@@ -141,7 +141,7 @@ def setup_conda():
             "conda", "run", "-n", env_name, "pip", "install", "-r", "requirements.txt"
         ], "Installing packages in conda environment"):
             print(f"\n✅ Conda environment '{env_name}' setup complete!")
-            print(f"\n🚀 To activate the environment:")
+            print(f"\n To activate the environment:")
             print(f"   conda activate {env_name}")
             return True
     else:
@@ -150,7 +150,7 @@ def setup_conda():
 
 def launch_jupyter(method):
     """Launch Jupyter notebook."""
-    print("\n📓 Launching Jupyter Notebook")
+    print("\n Launching Jupyter Notebook")
     print("=" * 50)
     
     if method == "venv":
@@ -165,11 +165,11 @@ def launch_jupyter(method):
     else:
         cmd = ["jupyter", "notebook"]
     
-    print(f"🚀 Starting Jupyter with command: {' '.join(cmd)}")
+    print(f" Starting Jupyter with command: {' '.join(cmd)}")
     try:
         subprocess.run(cmd)
     except KeyboardInterrupt:
-        print("\n👋 Jupyter notebook stopped.")
+        print("\n Jupyter notebook stopped.")
     except Exception as e:
         print(f"❌ Error launching Jupyter: {e}")
 
@@ -183,10 +183,10 @@ def main():
     
     args = parser.parse_args()
     
-    print("🧬 EC Proteomics Analysis - Environment Setup")
+    print(" EC Proteomics Analysis - Environment Setup")
     print("=" * 60)
-    print(f"📋 Method: {args.method}")
-    print(f"📓 Launch Jupyter: {args.jupyter}")
+    print(f" Method: {args.method}")
+    print(f" Launch Jupyter: {args.jupyter}")
     
     # Check if we're in the right directory
     if not os.path.exists("proteomics_analysis.py"):
@@ -206,14 +206,16 @@ def main():
     if not success:
         print(f"\n❌ Environment setup failed with method '{args.method}'")
         if args.method != "venv":
-            print("💡 Try fallback: python setup_environment.py --method venv")
+            print(" Try fallback: python setup_environment.py --method venv")
         return 1
+    
+    print(f"\n Setup complete! Environment ready for proteomics analysis.")
     
     # Launch Jupyter if requested
     if args.jupyter:
         launch_jupyter(args.method)
     
-    print(f"\n🎉 Setup complete! Environment ready for proteomics analysis.")
+    
     return 0
 
 if __name__ == "__main__":

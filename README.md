@@ -1,20 +1,14 @@
 # EC Proteomics Analysis Pipeline
 
-A modern data science pipeline for analyzing endothelial cell proteomics data with statistical methods, interactive visualizations, and automated reporting.
-
-![Python](https://img.shields.io/badge/python-3.8+-blue.svg)
-![License](https://img.shields.io/badge/license-MIT-green.svg)
-![Status](https://img.shields.io/badge/status-stable-brightgreen.svg)
-
 ## Overview
-
-This repository provides a framework for LC-MS/MS proteomics analysis, designed for endothelial cell biology research. The pipeline transforms raw proteomics data into publication-ready insights.
-
-### Publication
 
 This code supports the analysis presented in:
 > **"Multi-omics analysis of endothelial cells reveals the metabolic diversity that underlies endothelial cell functions"**  
 > *bioRxiv*: https://doi.org/10.1101/2025.03.03.641143
+
+![Python](https://img.shields.io/badge/python-3.8+-blue.svg)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
+![Status](https://img.shields.io/badge/status-stable-brightgreen.svg)
 
 ## Features
 
@@ -34,8 +28,8 @@ This code supports the analysis presented in:
 git clone https://github.com/sdurot/EC_proteomics.git
 cd EC_proteomics
 
-# Setup virtual environment and launch Jupyter
-python setup_environment.py --method venv --jupyter
+# Setup virtual environment and launch Jupyter. UV is recommended.
+python setup_environment.py --method uv --jupyter
 ```
 
 ### Manual Virtual Environment
@@ -49,7 +43,7 @@ pip install -r requirements.txt
 
 ### Alternative Methods
 
-- **UV**: `python setup_environment.py --method uv --jupyter`
+- **venv**: `python setup_environment.py --method venv --jupyter`
 - **Conda**: `python setup_environment.py --method conda --jupyter`
 - **Global Python**: If packages already available, run directly
 
@@ -90,7 +84,7 @@ python proteomics_analysis.py
 ## Data Structure
 
 ### Input Format
-Excel file with protein intensities in format: `CELLLINE_TIMEPOINT_REPLICATE`
+Excel file with protein intensities and sample names in format: `CELLLINE_TIMEPOINT_REPLICATE`
 
 ### File Structure
 ```
@@ -142,39 +136,11 @@ pca_results = analyzer.perform_pca(n_components=15)
 protein_lists = analyzer.results['plsda']['significant_proteins']
 ```
 
-## Key Improvements
-
-- **Object-oriented design** with modular functions and error handling
-- **Statistical enhancements**: permutation testing, cross-validation, multiple testing corrections
-- **Interactive visualizations** with Plotly and publication-quality static figures
-- **Automated reporting** and comprehensive documentation
-- **Jupyter notebook tutorial** and flexible input/output formats
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Open a Pull Request
-
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Citation
-
-```bibtex
-@article{durot2025multiomics,
-  title={Multi-omics analysis of endothelial cells reveals the metabolic diversity that underlies endothelial cell functions},
-  author={Durot, S. and colleagues},
-  journal={bioRxiv},
-  year={2025},
-  doi={10.1101/2025.03.03.641143}
-}
-```
 
 ## Support
 
 - Issues: [GitHub Issues](https://github.com/sdurot/EC_proteomics/issues)
-- Discussions: [GitHub Discussions](https://github.com/sdurot/EC_proteomics/discussions)

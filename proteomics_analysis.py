@@ -78,6 +78,46 @@ class ProteomicsAnalyzer:
         
         logger.info(f"ProteomicsAnalyzer initialized with data path: {self.data_path}")
         logger.info(f"Results will be saved to: {self.output_dir}")
+        
+        # Try to load data automatically if the default file exists
+        self._try_auto_load_data()
+    
+    @property
+    def data(self):
+        """
+        Get the most processed version of the data available.
+        
+        Returns:
+        --------
+        pd.DataFrame
+            The normalized data if available, otherwise clean data, otherwise raw data
+        """
+        if self.normalized_data is not None:
+            return self.normalized_data
+        elif self.clean_data is not None:
+            return self.clean_data
+        elif self.raw_data is not None:
+            return self.raw_data
+        else:
+            logger.warning("No data loaded. Please use load_data() method first.")
+            return None
+    
+    def _try_auto_load_data(self):
+        """Try to automatically load data if the default file exists."""
+        default_files = ["Suppl_table_1_Px_data.xlsx", "Suppl_table_1.xlsx"]
+        
+        for filename in default_files:
+            file_path = self.data_path / filename
+            if file_path.exists():
+                try:
+                    logger.info(f"Found data file: {filename}. Loading automatically...")
+                    self.load_data(filename)
+                    return
+                except Exception as e:
+                    logger.debug(f"Failed to auto-load {filename}: {e}")
+                    continue
+        
+        logger.info("No default data file found. Use load_data() method to load your data.")
     
     def _setup_plotting(self):
         """Configure matplotlib and seaborn for publication-quality plots."""
