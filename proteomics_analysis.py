@@ -385,6 +385,12 @@ class ProteomicsAnalyzer:
         --------
         dict : PCA results including components, explained variance, and scores
         """
+        # Ensure data is preprocessed and normalized
+        if self.normalized_data is None:
+            logger.info("Data not normalized. Preprocessing and normalizing data first...")
+            self.preprocess_data()
+            self.normalize_data()
+        
         # Filter data by time points if specified
         if time_points:
             logger.info(f"Performing PCA with {n_components} components for time points: {time_points}")
@@ -515,6 +521,12 @@ class ProteomicsAnalyzer:
         --------
         dict : PLS-DA results including model, weights, and significance
         """
+        # Ensure data is preprocessed and normalized
+        if self.normalized_data is None:
+            logger.info("Data not normalized. Preprocessing and normalizing data first...")
+            self.preprocess_data()
+            self.normalize_data()
+        
         logger.info(f"Performing PLS-DA for {target_variable}...")
         
         # Prepare data using the same approach as original code
@@ -911,8 +923,8 @@ class ProteomicsAnalyzer:
             report_html += f"""
             <div class="section">
                 <h2>PLS-DA Analysis</h2>
-                <div class="metric">Significant proteins (high weights): {len(plsda_results['significant_proteins']['high_weights'])}</div>
-                <div class="metric">Significant proteins (low weights): {len(plsda_results['significant_proteins']['low_weights'])}</div>
+                <div class="metric">LEC-associated proteins: {len(plsda_results.get('significant_proteins', {}).get('LEC_associated', []))}</div>
+                <div class="metric">BEC-associated proteins: {len(plsda_results.get('significant_proteins', {}).get('BEC_associated', []))}</div>
             </div>
             """
         
@@ -954,6 +966,74 @@ class ProteomicsAnalyzer:
             logger.info(f"Report saved to {report_file}")
         
         return report_html
+    
+    def run_analysis(self, time_points: List[str] = None, plsda_threshold: float = 90.0) -> Dict:
+        """
+        Run the complete analysis pipeline.
+        
+        Parameters:
+        -----------
+        time_points : list, optional
+            List of time points to include in PCA (e.g., ['D2', 'D5'])
+        plsda_threshold : float, default 90.0
+            Percentile threshold for PLS-DA significant weights
+            
+        Returns:
+        --------
+        dict : Dictionary containing all analysis results
+        """
+        logger.info("Starting complete proteomics analysis pipeline...")
+        
+        # Ensure data is loaded
+        if self.raw_data is None:
+            logger.error("No data loaded. Please use load_data() first.")
+            return {}
+        
+        results = {}
+        
+        try:
+            # 1. Preprocess and normalize data
+            logger.info("Step 1: Preprocessing and normalizing data...")
+            self.preprocess_data()
+            self.normalize_data()
+            results['preprocessing'] = {'status': 'completed'}
+            
+            # 2. Quality control
+            logger.info("Step 2: Quality control analysis...")
+            results['quality_control'] = self.quality_control()
+            
+            # 3. PCA analysis
+            logger.info("Step 3: PCA analysis...")
+            if time_points:
+                results['pca'] = self.perform_pca(time_points=time_points)
+                logger.info(f"PCA completed for time points: {time_points}")
+            else:
+                results['pca'] = self.perform_pca()
+                logger.info("PCA completed for all samples")
+            
+            # 4. PLS-DA analysis
+            logger.info("Step 4: PLS-DA analysis...")
+            results['plsda'] = self.perform_plsda(threshold_percentile=plsda_threshold)
+            
+            if results['plsda'] and 'significant_proteins' in results['plsda']:
+                sig_prots = results['plsda']['significant_proteins']
+                bec_count = len(sig_prots.get('BEC_associated', []))
+                lec_count = len(sig_prots.get('LEC_associated', []))
+                logger.info(f"PLS-DA completed: {bec_count} BEC-associated, {lec_count} LEC-associated proteins")
+            
+            # 5. Generate report
+            logger.info("Step 5: Generating analysis report...")
+            results['report'] = self.generate_report()
+            
+            # Store results in the instance
+            self.results.update(results)
+            
+            logger.info("✅ Complete analysis pipeline finished successfully!")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error in analysis pipeline: {e}")
+            raise
 
 
 def main():
