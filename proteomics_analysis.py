@@ -132,6 +132,10 @@ class ProteomicsAnalyzer:
             ).rename(columns={'First.Protein:Description': 'Protein description'})
             
             logger.info(f"Loaded {self.raw_data.shape[0]} proteins across {self.raw_data.shape[1]-3} samples")
+            logger.debug(f"Column names: {list(self.raw_data.columns)}")
+            
+            # Create genes_prot_data for compatibility with original code
+            self._create_protein_metadata()
             
         except FileNotFoundError:
             logger.error(f"File {excel_file} not found in {self.data_path}")
@@ -141,6 +145,36 @@ class ProteomicsAnalyzer:
             raise
             
         return self
+    
+    def _create_protein_metadata(self):
+        """Create protein metadata DataFrame for compatibility."""
+        # Find available columns
+        desc_cols = ['Protein description', 'First.Protein.Description', 'First.Protein:Description', 'Protein.Description']
+        id_cols = ['Protein.Ids', 'Protein IDs', 'Protein_IDs', 'ProteinIDs']
+        
+        desc_col = None
+        id_col = None
+        
+        for col in desc_cols:
+            if col in self.raw_data.columns:
+                desc_col = col
+                break
+        
+        for col in id_cols:
+            if col in self.raw_data.columns:
+                id_col = col
+                break
+        
+        # Create metadata DataFrame
+        metadata_dict = {'Gene names': self.raw_data['Gene names']}
+        
+        if desc_col:
+            metadata_dict['Protein description'] = self.raw_data[desc_col]
+        
+        if id_col:
+            metadata_dict['Protein IDs'] = self.raw_data[id_col]
+        
+        self.genes_prot_data = pd.DataFrame(metadata_dict).reset_index(drop=True)
     
     def preprocess_data(self, remove_outliers: bool = True) -> 'ProteomicsAnalyzer':
         """
@@ -293,7 +327,8 @@ class ProteomicsAnalyzer:
         logger.info("Quality control analysis completed")
         return qc_results
     
-    def perform_pca(self, n_components: int = 10, save_plots: bool = True) -> Dict:
+    def perform_pca(self, n_components: int = 10, save_plots: bool = True, 
+                    time_points: List[str] = None) -> Dict:
         """
         Perform Principal Component Analysis.
         
@@ -303,15 +338,29 @@ class ProteomicsAnalyzer:
             Number of principal components to calculate
         save_plots : bool, default True
             Whether to save plots to output directory
+        time_points : list, optional
+            List of time points to include (e.g., ['D2', 'D5'])
             
         Returns:
         --------
         dict : PCA results including components, explained variance, and scores
         """
-        logger.info(f"Performing PCA with {n_components} components...")
-        
-        # Prepare data for PCA
-        pca_data = self.normalized_data.T  # Samples as rows, proteins as columns
+        # Filter data by time points if specified
+        if time_points:
+            logger.info(f"Performing PCA with {n_components} components for time points: {time_points}")
+            # Filter metadata for specified time points
+            time_mask = self.metadata['time_point'].isin(time_points)
+            filtered_metadata = self.metadata[time_mask]
+            filtered_samples = filtered_metadata['sample_id']
+            
+            # Filter normalized data
+            pca_data = self.normalized_data[filtered_samples].T  # Samples as rows, proteins as columns
+            metadata_for_plot = filtered_metadata
+        else:
+            logger.info(f"Performing PCA with {n_components} components...")
+            # Prepare data for PCA
+            pca_data = self.normalized_data.T  # Samples as rows, proteins as columns
+            metadata_for_plot = self.metadata
         
         # Perform PCA
         pca = PCA(n_components=n_components)
@@ -322,7 +371,7 @@ class ProteomicsAnalyzer:
             'pca_model': pca,
             'scores': pd.DataFrame(
                 pca_scores, 
-                index=self.normalized_data.columns,
+                index=pca_data.index,  # Use the actual filtered data index
                 columns=[f'PC{i+1}' for i in range(n_components)]
             ),
             'explained_variance_ratio': pca.explained_variance_ratio_,
@@ -348,7 +397,7 @@ class ProteomicsAnalyzer:
         
         # PCA score plot with metadata
         pca_df = pca_results['scores'].copy()
-        pca_df = pca_df.merge(self.metadata.set_index('sample_id'), 
+        pca_df = pca_df.merge(metadata_for_plot.set_index('sample_id'), 
                              left_index=True, right_index=True)
         
         for cell_type in pca_df['cell_type'].unique():
@@ -404,7 +453,8 @@ class ProteomicsAnalyzer:
         return pca_results
     
     def perform_plsda(self, target_variable: str = 'cell_type', n_components: int = 2, 
-                      n_permutations: int = 1000, save_plots: bool = True) -> Dict:
+                      n_permutations: int = 10000, save_plots: bool = True, 
+                      threshold_percentile: float = 90.0) -> Dict:
         """
         Perform Partial Least Squares Discriminant Analysis (PLS-DA).
         
@@ -414,10 +464,12 @@ class ProteomicsAnalyzer:
             Target variable for classification ('cell_type', 'cell_line', etc.)
         n_components : int, default 2
             Number of PLS components
-        n_permutations : int, default 1000
+        n_permutations : int, default 10000
             Number of permutations for significance testing
         save_plots : bool, default True
             Whether to save plots to output directory
+        threshold_percentile : float, default 90.0
+            Percentile threshold for significant weights
             
         Returns:
         --------
@@ -425,63 +477,91 @@ class ProteomicsAnalyzer:
         """
         logger.info(f"Performing PLS-DA for {target_variable}...")
         
-        # Prepare data
-        X = self.normalized_data.T.fillna(0)  # Samples x Proteins
-        y = pd.get_dummies(self.metadata.set_index('sample_id')[target_variable]).iloc[:, 0]
+        # Prepare data using the same approach as original code
+        # Use raw data with NaN replaced by 0, similar to original
+        X = self.raw_data.iloc[:, 2:-2].replace(np.nan, 0).T  # Samples x Proteins
+        
+        # Encode cell type: BEC=0, LEC=1 (same as original)
+        if target_variable == 'cell_type':
+            celltype = np.where(self.metadata['cell_line'].isin(['HDBEC', 'HUVEC']), 0, 1)
+        else:
+            celltype = pd.get_dummies(self.metadata[target_variable]).iloc[:, 0].values
         
         # Fit PLS-DA model
         plsda = PLSRegression(n_components=n_components, scale=True)
-        plsda.fit(X, y)
+        plsda.fit(X, celltype)
         
-        # Get scores and weights
-        scores = plsda.transform(X)
-        weights = pd.DataFrame(
-            plsda.x_weights_, 
-            index=self.normalized_data.index,
-            columns=[f'LV{i+1}' for i in range(n_components)]
-        )
+        # Get scores and weights (using x_scores_ and x_weights_ for consistency)
+        scores = pd.DataFrame(plsda.x_scores_, 
+                            index=X.index, 
+                            columns=[f'LV{i+1}' for i in range(n_components)])
+        weights = pd.DataFrame(plsda.x_weights_, 
+                             index=self.raw_data.iloc[:, 1],  # Gene names as index
+                             columns=[f'LV{i+1}' for i in range(n_components)])
         
-        # Permutation testing
+        # Bootstrapping for significance testing (same as original)
         logger.info(f"Running {n_permutations} permutations for significance testing...")
-        null_weights = []
+        pls_boot_90_percentile = []
+        pls_boot_10_percentile = []
         
         for _ in range(n_permutations):
-            y_perm = np.random.permutation(y)
+            celltype_shuffle = np.random.permutation(celltype)
             plsda_perm = PLSRegression(n_components=n_components, scale=True)
-            plsda_perm.fit(X, y_perm)
-            null_weights.append(plsda_perm.x_weights_[:, 0])
+            plsda_perm.fit(X, celltype_shuffle)
+            weights_perm = pd.DataFrame(plsda_perm.x_weights_)[0]  # LV1 weights
+            pls_boot_90_percentile.append(weights_perm.quantile(threshold_percentile/100))
+            pls_boot_10_percentile.append(weights_perm.quantile((100-threshold_percentile)/100))
         
-        null_weights = np.array(null_weights)
-        
-        # Calculate significance thresholds
-        significance_thresholds = {
-            'upper_95': np.percentile(null_weights, 95, axis=0),
-            'lower_5': np.percentile(null_weights, 5, axis=0),
-            'upper_99': np.percentile(null_weights, 99, axis=0),
-            'lower_1': np.percentile(null_weights, 1, axis=0)
-        }
+        # Calculate thresholds
+        pls_top_threshold = np.mean(pls_boot_90_percentile)
+        pls_bottom_threshold = np.mean(pls_boot_10_percentile)
         
         # Identify significant proteins
         lv1_weights = weights['LV1']
-        significant_proteins = {
-            'high_weights': lv1_weights[lv1_weights >= np.mean(significance_thresholds['upper_95'])],
-            'low_weights': lv1_weights[lv1_weights <= np.mean(significance_thresholds['lower_5'])]
-        }
+        bec_associated = lv1_weights[lv1_weights <= pls_bottom_threshold]
+        lec_associated = lv1_weights[lv1_weights >= pls_top_threshold]
+        
+        # Additional bootstrapping to test significance of number of proteins
+        pls_boot_number_top = []
+        pls_boot_number_bottom = []
+        pls_boot_number_combined = []
+        
+        logger.info("Running secondary bootstrap for protein count significance...")
+        for _ in range(1000):
+            celltype_shuffle = np.random.permutation(celltype)
+            plsda_perm = PLSRegression(n_components=n_components, scale=True)
+            plsda_perm.fit(X, celltype_shuffle)
+            weights_lv1_perm = pd.DataFrame(plsda_perm.x_weights_).iloc[:, 0]
+            
+            number_top = (weights_lv1_perm >= pls_top_threshold).sum()
+            number_bottom = (weights_lv1_perm <= pls_bottom_threshold).sum()
+            
+            pls_boot_number_top.append(number_top)
+            pls_boot_number_bottom.append(number_bottom)
+            pls_boot_number_combined.append(number_top + number_bottom)
         
         plsda_results = {
             'model': plsda,
-            'scores': pd.DataFrame(scores, index=X.index, columns=[f'LV{i+1}' for i in range(n_components)]),
+            'scores': scores,
             'weights': weights,
-            'significant_proteins': significant_proteins,
-            'significance_thresholds': significance_thresholds,
-            'null_distribution': null_weights
+            'bec_associated': bec_associated,
+            'lec_associated': lec_associated,
+            'thresholds': {
+                'top': pls_top_threshold,
+                'bottom': pls_bottom_threshold
+            },
+            'bootstrap_counts': {
+                'top': pls_boot_number_top,
+                'bottom': pls_boot_number_bottom,
+                'combined': pls_boot_number_combined
+            }
         }
         
-        # Create visualization
+        # Create visualization (4 subplots as in original)
         fig, axes = plt.subplots(2, 2, figsize=(15, 12))
         
         # Score plot
-        scores_df = plsda_results['scores'].copy()
+        scores_df = scores.copy()
         scores_df = scores_df.merge(self.metadata.set_index('sample_id'), 
                                   left_index=True, right_index=True)
         
@@ -490,58 +570,88 @@ class ProteomicsAnalyzer:
             axes[0, 0].scatter(scores_df.loc[mask, 'LV1'], scores_df.loc[mask, 'LV2'], 
                              label=group, s=60, alpha=0.7)
         
-        axes[0, 0].set_xlabel('LV1')
-        axes[0, 0].set_ylabel('LV2')
+        axes[0, 0].set_xlabel('Component 1')
+        axes[0, 0].set_ylabel('Component 2')
         axes[0, 0].set_title('PLS-DA Score Plot')
         axes[0, 0].legend()
         axes[0, 0].grid(True, alpha=0.3)
         
-        # Weights plot with significance
+        # Ordered weights plot with thresholds
         sorted_weights = lv1_weights.sort_values()
         axes[0, 1].scatter(range(len(sorted_weights)), sorted_weights, 
-                          s=20, alpha=0.6, color='black')
-        axes[0, 1].axhline(np.mean(significance_thresholds['upper_95']), 
-                          color='red', linestyle='--', label='95% threshold')
-        axes[0, 1].axhline(np.mean(significance_thresholds['lower_5']), 
-                          color='red', linestyle='--')
-        axes[0, 1].set_xlabel('Proteins (ranked)')
-        axes[0, 1].set_ylabel('LV1 Weights')
-        axes[0, 1].set_title('PLS-DA Weights with Significance Thresholds')
+                          marker='.', s=1, alpha=0.5, color='black')
+        axes[0, 1].axhline(pls_top_threshold, color='red', linestyle='-', 
+                          label=f'{threshold_percentile}% threshold')
+        axes[0, 1].axhline(pls_bottom_threshold, color='red', linestyle='-')
+        axes[0, 1].set_xlabel('Proteins')
+        axes[0, 1].set_ylabel('Weights LV1')
+        axes[0, 1].set_title('Ordered PLS-DA Weights with Thresholds')
         axes[0, 1].legend()
         axes[0, 1].grid(True, alpha=0.3)
         
-        # Null distribution
-        axes[1, 0].hist(null_weights.flatten(), bins=50, alpha=0.7, 
-                       color='lightblue', label='Null distribution')
-        axes[1, 0].axvline(len(significant_proteins['high_weights']) + 
-                          len(significant_proteins['low_weights']), 
-                          color='red', linestyle='--', 
-                          label=f"Observed ({len(significant_proteins['high_weights']) + len(significant_proteins['low_weights'])})")
-        axes[1, 0].set_xlabel('Number of significant proteins')
-        axes[1, 0].set_ylabel('Frequency')
-        axes[1, 0].set_title('Permutation Test Results')
+        # Bootstrap distribution plot
+        axes[1, 0].hist(pls_boot_number_combined, bins=30, alpha=0.7, 
+                       color='lightblue', label='Total', density=True)
+        axes[1, 0].hist(pls_boot_number_top, bins=30, alpha=0.7, 
+                       color='orange', label='Top', density=True)
+        axes[1, 0].hist(pls_boot_number_bottom, bins=30, alpha=0.7, 
+                       color='green', label='Bottom', density=True)
+        
+        # Add observed values as vertical lines
+        axes[1, 0].axvline(len(bec_associated) + len(lec_associated), 
+                          color='blue', linestyle='--', linewidth=2, label='Observed Total')
+        axes[1, 0].axvline(len(lec_associated), color='orange', linestyle='--', linewidth=2)
+        axes[1, 0].axvline(len(bec_associated), color='green', linestyle='--', linewidth=2)
+        
+        axes[1, 0].set_xlabel('Number of proteins')
+        axes[1, 0].set_ylabel('Density')
+        axes[1, 0].set_title('Permutation Test: Protein Count Distribution')
         axes[1, 0].legend()
         axes[1, 0].grid(True, alpha=0.3)
         
         # Cross-validation scores
-        cv_scores = cross_val_score(plsda, X, y, cv=5, scoring='roc_auc')
-        axes[1, 1].bar(range(len(cv_scores)), cv_scores)
+        cv_scores = cross_val_score(plsda, X, celltype, cv=5, scoring='roc_auc')
+        bars = axes[1, 1].bar(range(len(cv_scores)), cv_scores, alpha=0.7)
         axes[1, 1].axhline(cv_scores.mean(), color='red', linestyle='--', 
                           label=f'Mean CV Score: {cv_scores.mean():.3f}')
+        
+        # Add value labels on bars
+        for i, (bar, score) in enumerate(zip(bars, cv_scores)):
+            axes[1, 1].text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
+                           f'{score:.3f}', ha='center', va='bottom', fontsize=10)
+        
         axes[1, 1].set_xlabel('CV Fold')
         axes[1, 1].set_ylabel('ROC AUC')
         axes[1, 1].set_title('Cross-Validation Performance')
+        axes[1, 1].set_ylim(0, 1.1)
         axes[1, 1].legend()
         axes[1, 1].grid(True, alpha=0.3)
         
         plt.tight_layout()
         if save_plots:
-            plt.savefig(self.output_dir / f'plsda_{target_variable}.png')
+            plt.savefig(self.output_dir / f'plsda_{target_variable}.png', dpi=300, bbox_inches='tight')
         plt.show()
         
+        # Save LV1 weights to CSV with BEC/LEC associations
+        weights_output = weights.copy()
+        weights_output['Cell_Type_Association'] = 'Neither'
+        weights_output.loc[bec_associated.index, 'Cell_Type_Association'] = 'BEC'
+        weights_output.loc[lec_associated.index, 'Cell_Type_Association'] = 'LEC'
+        
+        # Add protein information if available
+        if hasattr(self, 'genes_prot_data') and self.genes_prot_data is not None:
+            weights_output = weights_output.merge(
+                self.genes_prot_data.set_index('Gene names'),
+                left_index=True, right_index=True, how='left'
+            )
+        
+        weights_file = self.output_dir / f'plsda_weights_{target_variable}.csv'
+        weights_output.to_csv(weights_file)
+        logger.info(f"PLS-DA weights saved to {weights_file}")
+        
         self.results['plsda'] = plsda_results
-        logger.info(f"PLS-DA completed. Found {len(significant_proteins['high_weights'])} high and "
-                   f"{len(significant_proteins['low_weights'])} low weighted significant proteins")
+        logger.info(f"PLS-DA completed. Found {len(lec_associated)} LEC-associated and "
+                   f"{len(bec_associated)} BEC-associated proteins")
         
         return plsda_results
     
@@ -628,13 +738,15 @@ class ProteomicsAnalyzer:
             })
             
             # Add protein information
-            protein_info_subset = self.raw_data[['Gene names', 'Protein description', 'Protein.Ids']].drop_duplicates()
-            diff_results = diff_results.merge(
-                protein_info_subset, 
-                left_on='gene_name', 
-                right_on='Gene names', 
-                how='left'
-            )
+            if hasattr(self, 'genes_prot_data') and self.genes_prot_data is not None:
+                diff_results = diff_results.merge(
+                    self.genes_prot_data, 
+                    left_on='gene_name', 
+                    right_on='Gene names', 
+                    how='left'
+                )
+            else:
+                logger.warning("No protein metadata available for differential analysis")
             
             results[f"{condition}_vs_{reference_condition}"] = diff_results
             
@@ -822,18 +934,20 @@ def main():
     
     try:
         # Load and preprocess data
-        analyzer.load_data("Suppl_table_1.xlsx")
+        analyzer.load_data("Suppl_table_1_Px_data.xlsx")
         analyzer.preprocess_data()
         analyzer.normalize_data(method='zscore')
         
         # Quality control
         qc_results = analyzer.quality_control()
         
-        # PCA analysis
-        pca_results = analyzer.perform_pca(n_components=10)
+        # PCA analysis with D2 and D5 samples only
+        pca_results = analyzer.perform_pca(n_components=10, time_points=['D2', 'D5'])
         
-        # PLS-DA for cell type discrimination
-        plsda_results = analyzer.perform_plsda(target_variable='cell_type', n_permutations=1000)
+        # PLS-DA for cell type discrimination with 90% threshold
+        plsda_results = analyzer.perform_plsda(target_variable='cell_type', 
+                                             n_permutations=10000, 
+                                             threshold_percentile=90.0)
         
         # Differential analysis example
         # Compare different time points within each cell line
