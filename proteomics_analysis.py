@@ -621,6 +621,10 @@ class ProteomicsAnalyzer:
         
         cv_scores = np.array(cv_scores)
         
+        # Calculate model performance metrics
+        y_pred = plsda.predict(X)
+        r2_score = plsda.score(X, celltype)
+        
         plsda_results = {
             'model': plsda,
             'scores': scores,
@@ -640,6 +644,10 @@ class ProteomicsAnalyzer:
                 'cv_scores': cv_scores,
                 'mean_auc': cv_scores.mean(),
                 'std_auc': cv_scores.std()
+            },
+            'model_performance': {
+                'r2_score': r2_score,
+                'cv_score': cv_scores.mean()  # Use our cross-validation AUC as the CV score
             }
         }
         
