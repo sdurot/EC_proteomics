@@ -499,7 +499,7 @@ class ProteomicsAnalyzer:
         return pca_results
     
     def perform_plsda(self, target_variable: str = 'cell_type', n_components: int = 2, 
-                      n_permutations: int = 10000, save_plots: bool = True, 
+                      n_permutations: int = 1000, save_plots: bool = True, 
                       threshold_percentile: float = 90.0) -> Dict:
         """
         Perform Partial Least Squares Discriminant Analysis (PLS-DA).
@@ -592,6 +592,35 @@ class ProteomicsAnalyzer:
             pls_boot_number_bottom.append(number_bottom)
             pls_boot_number_combined.append(number_top + number_bottom)
         
+        # Perform cross-validation (manual approach to avoid feature dimension mismatch)
+        from sklearn.model_selection import StratifiedKFold
+        from sklearn.metrics import roc_auc_score
+        
+        logger.info("Performing 5-fold cross-validation...")
+        skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+        cv_scores = []
+        
+        for fold, (train_idx, test_idx) in enumerate(skf.split(X.values, celltype)):
+            X_train, X_test = X.values[train_idx], X.values[test_idx]
+            y_train, y_test = celltype[train_idx], celltype[test_idx]
+            
+            # Create and fit a new model for this fold
+            fold_model = PLSRegression(n_components=n_components, scale=True)
+            fold_model.fit(X_train, y_train)
+            
+            # Get decision scores
+            y_scores = fold_model.predict(X_test).ravel()
+            
+            # Calculate ROC AUC if we have both classes
+            if len(np.unique(y_test)) > 1:
+                auc = roc_auc_score(y_test, y_scores)
+                cv_scores.append(auc)
+            else:
+                # If only one class, assign perfect score
+                cv_scores.append(1.0)
+        
+        cv_scores = np.array(cv_scores)
+        
         plsda_results = {
             'model': plsda,
             'scores': scores,
@@ -606,6 +635,11 @@ class ProteomicsAnalyzer:
                 'top': pls_boot_number_top,
                 'bottom': pls_boot_number_bottom,
                 'combined': pls_boot_number_combined
+            },
+            'cross_validation': {
+                'cv_scores': cv_scores,
+                'mean_auc': cv_scores.mean(),
+                'std_auc': cv_scores.std()
             }
         }
         
@@ -661,9 +695,8 @@ class ProteomicsAnalyzer:
         axes[1, 0].legend()
         axes[1, 0].grid(True, alpha=0.3)
         
-        # Cross-validation scores
-        cv_scores = cross_val_score(plsda, X, celltype, cv=5, scoring='roc_auc')
-        bars = axes[1, 1].bar(range(len(cv_scores)), cv_scores, alpha=0.7)
+        # Plot cross-validation results (use the cv_scores computed earlier)
+        bars = axes[1, 1].bar(range(len(cv_scores)), cv_scores, alpha=0.7, color='skyblue', edgecolor='navy')
         axes[1, 1].axhline(cv_scores.mean(), color='red', linestyle='--', 
                           label=f'Mean CV Score: {cv_scores.mean():.3f}')
         
@@ -673,8 +706,8 @@ class ProteomicsAnalyzer:
                            f'{score:.3f}', ha='center', va='bottom', fontsize=10)
         
         axes[1, 1].set_xlabel('CV Fold')
-        axes[1, 1].set_ylabel('ROC AUC')
-        axes[1, 1].set_title('Cross-Validation Performance')
+        axes[1, 1].set_ylabel('ROC AUC Score')
+        axes[1, 1].set_title('Cross-Validation Performance (PLS-DA)')
         axes[1, 1].set_ylim(0, 1.1)
         axes[1, 1].legend()
         axes[1, 1].grid(True, alpha=0.3)

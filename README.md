@@ -12,7 +12,7 @@ This code supports the analysis presented in:
 
 ## Features
 
-- **Object-oriented design** with the `ProteomicsAnalyzer` class
+**`ProteomicsAnalyzer` class includes all of the following:**
 - **Principal Component Analysis (PCA)** with explained variance plots
 - **Partial Least Squares Discriminant Analysis (PLS-DA)** with permutation testing
 - **Interactive plots** using Plotly and publication-quality static plots
@@ -30,15 +30,6 @@ cd EC_proteomics
 
 # Setup virtual environment and launch Jupyter. UV is recommended.
 python setup_environment.py --method uv --jupyter
-```
-
-### Manual Virtual Environment
-
-```bash
-python -m venv .venv
-.venv\Scripts\activate  # Windows
-source .venv/bin/activate  # Unix/Linux/macOS
-pip install -r requirements.txt
 ```
 
 ### Alternative Methods
